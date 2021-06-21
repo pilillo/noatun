@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"math"
 
 	"github.com/georgysavva/scany/pgxscan"
 	"github.com/gin-gonic/gin"
@@ -156,6 +157,59 @@ func Dijkstra(c *gin.Context) {
 	}
 }
 
+type point struct{ 
+	/*
+	x float64 `json:"x"`
+	y float64 `json:"y"`
+	*/
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+type rdpRequest struct {
+	Seq []point `json:"seq"`
+	Epsilon float64 `json:"epsilon"`
+}
+
+func Rdp(c *gin.Context){
+	req := &rdpRequest{}
+	err := c.BindJSON(&req)
+	if err != nil {
+		restErr := GetBadRequestError("invalid input json format")
+		c.JSON(restErr.Status, restErr)
+		return
+	}
+
+	if len(req.Seq) <= 2 {
+		restErr := GetBadRequestError("need more than 2 elements in seq")
+		c.JSON(restErr.Status, restErr)
+		return
+	}
+	
+	c.JSON(http.StatusOK, RDPSimplify(req.Seq, req.Epsilon))
+}
+
+// https://rosettacode.org/wiki/Ramer-Douglas-Peucker_line_simplification#Go
+func RDPSimplify(l []point, ε float64) []point {
+    x := 0
+    dMax := -1.
+    last := len(l) - 1
+    p1 := l[0]
+    p2 := l[last]
+    x21 := p2.X - p1.X
+    y21 := p2.Y - p1.Y
+    for i, p := range l[1:last] {
+        if d := math.Abs(y21*p.X - x21*p.Y + p2.X*p1.Y - p2.Y*p1.X); d > dMax {
+            x = i + 1
+            dMax = d
+        }
+    }
+    if dMax > ε {
+        return append(RDPSimplify(l[:x+1], ε), RDPSimplify(l[x:], ε)[1:]...)
+    }
+    return []point{l[0], l[len(l)-1]}
+}
+
 type inputQuery struct {
 	Sql string `json:"sql"`
 }
@@ -221,6 +275,7 @@ func StartEndpoint() {
 	router.POST("decodeh3/", DecodeH3)
 
 	router.POST("dijkstra", Dijkstra)
+	router.POST("rdp", Rdp)
 
 	// run router as standalone service
 	router.Run(fmt.Sprintf(":%s", port))

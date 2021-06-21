@@ -186,3 +186,41 @@ Returned response:
     }
 ]
 ```
+
+### RDP
+
+POST to `host:8085/rdp` (see [here](https://rosettacode.org/wiki/Ramer-Douglas-Peucker_line_simplification#Go)) with:
+```json
+{
+    "epsilon" : 1,
+    "seq" : [
+        {"x":0, "y": 0}, {"x":1, "y":0.1}, {"x":2, "y":-0.1}, {"x":3, "y":5}, {"x":4, "y":6}, {"x":5, "y":7}, {"x":6, "y":8.1}, {"x":7, "y":9}, {"x":8, "y":9}, {"x":9, "y":9}
+    ]
+}
+```
+
+Returned response:
+```json
+[
+    {
+        "x": 0,
+        "y": 0
+    },
+    {
+        "x": 2,
+        "y": -0.1
+    },
+    {
+        "x": 3,
+        "y": 5
+    },
+    {
+        "x": 7,
+        "y": 9
+    },
+    {
+        "x": 9,
+        "y": 9
+    }
+]
+```
