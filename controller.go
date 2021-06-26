@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
-	"math"
 
 	"github.com/georgysavva/scany/pgxscan"
 	"github.com/gin-gonic/gin"
@@ -157,21 +157,21 @@ func Dijkstra(c *gin.Context) {
 	}
 }
 
-type point struct{ 
+type point struct {
 	/*
-	x float64 `json:"x"`
-	y float64 `json:"y"`
+		x float64 `json:"x"`
+		y float64 `json:"y"`
 	*/
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
 }
 
 type rdpRequest struct {
-	Seq []point `json:"seq"`
+	Seq     []point `json:"seq"`
 	Epsilon float64 `json:"epsilon"`
 }
 
-func Rdp(c *gin.Context){
+func Rdp(c *gin.Context) {
 	req := &rdpRequest{}
 	err := c.BindJSON(&req)
 	if err != nil {
@@ -185,29 +185,61 @@ func Rdp(c *gin.Context){
 		c.JSON(restErr.Status, restErr)
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, RDPSimplify(req.Seq, req.Epsilon))
 }
 
 // https://rosettacode.org/wiki/Ramer-Douglas-Peucker_line_simplification#Go
 func RDPSimplify(l []point, ε float64) []point {
-    x := 0
-    dMax := -1.
-    last := len(l) - 1
-    p1 := l[0]
-    p2 := l[last]
-    x21 := p2.X - p1.X
-    y21 := p2.Y - p1.Y
-    for i, p := range l[1:last] {
-        if d := math.Abs(y21*p.X - x21*p.Y + p2.X*p1.Y - p2.Y*p1.X); d > dMax {
-            x = i + 1
-            dMax = d
-        }
-    }
-    if dMax > ε {
-        return append(RDPSimplify(l[:x+1], ε), RDPSimplify(l[x:], ε)[1:]...)
-    }
-    return []point{l[0], l[len(l)-1]}
+	x := 0
+	dMax := -1.
+	last := len(l) - 1
+	p1 := l[0]
+	p2 := l[last]
+	x21 := p2.X - p1.X
+	y21 := p2.Y - p1.Y
+	for i, p := range l[1:last] {
+		if d := math.Abs(y21*p.X - x21*p.Y + p2.X*p1.Y - p2.Y*p1.X); d > dMax {
+			x = i + 1
+			dMax = d
+		}
+	}
+	if dMax > ε {
+		return append(RDPSimplify(l[:x+1], ε), RDPSimplify(l[x:], ε)[1:]...)
+	}
+	return []point{l[0], l[len(l)-1]}
+}
+
+type demRequest struct {
+	Point point  `json:"location"`
+	Srid  uint16 `json:"srid"`
+}
+
+var demTable string = "public.eu_dem"
+
+func Dem(c *gin.Context) {
+	req := demRequest{}
+	err := c.BindJSON(&req)
+	if err != nil {
+		restErr := GetBadRequestError("invalid input json format")
+		c.JSON(restErr.Status, restErr)
+	} else {
+		var resultSet *float64
+		query := fmt.Sprintf(`SELECT ROUND(
+			CAST(
+			  (SELECT ST_Value(dem.rast, the_point.geom) AS height_in_meters
+			  FROM %s AS dem
+			  CROSS JOIN (SELECT ST_SetSRID(ST_Point(%f, %f), %d) As geom) AS the_point
+			  WHERE ST_Intersects(dem.rast, ST_SetSRID(ST_Point(%f, %f), %d)))
+			  AS numeric
+			), 2
+		  )`, demTable, req.Point.X, req.Point.Y, req.Srid, req.Point.X, req.Point.Y, req.Srid)
+
+		//model.Scan(query, resultSet)
+		pgxscan.Select(context.Background(), model.connPool, &resultSet, query)
+		// todo: handle case when the point matches no area - no result available
+		c.JSON(http.StatusOK, resultSet)
+	}
 }
 
 type inputQuery struct {
@@ -276,6 +308,7 @@ func StartEndpoint() {
 
 	router.POST("dijkstra", Dijkstra)
 	router.POST("rdp", Rdp)
+	router.POST("dem", Dem)
 
 	// run router as standalone service
 	router.Run(fmt.Sprintf(":%s", port))
